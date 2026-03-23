@@ -4,21 +4,24 @@ from user_devices.ADwinProII.labscript_devices_ADwin_modules import *
 from user_devices.ADwinProII.labscript_devices import ADwinProII
 from user_devices.ADwinProII.labscript_devices_ADwin_modules import ADwinAI8,ADwinAO8,ADwinDIO32
 from user_devices.DDS_AS065.labscript_devices import DDS_AS065
+from labscript_devices.IMAQdxCamera.labscript_devices import IMAQdxCamera
 
 import routines.experiment_blocks as experiment
 
 from user_devices import unitconversions
 
 # Create ADwin-Pro II Hardware
-ADwinProII("ADwin", 1, process_buffered, process_manual, mock=True)
+ADwinProII("ADwin", 1, process_buffered, process_manual)
 ADwinDIO32("DIO32_1", ADwin, module_address=1, TiCo=True)
-ADwinDIO32("DIO32_2", ADwin, module_address=2, TiCo=True)
-ADwinAO8("AO8_1", ADwin, module_address=5)
-ADwinAO8("AO8_2", ADwin, module_address=6)
-ADwinAI8("AI8_1", ADwin, module_address=3)
-ADwinAI8("AI8_2", ADwin, module_address=4)
+ADwinDIO32("DIO32_2", ADwin, module_address=5, TiCo=True)
+ADwinAO8("AO8_1", ADwin, module_address=3)
+ADwinAO8("AO8_2", ADwin, module_address=4)
+ADwinAI8("AI8_1", ADwin, module_address=2)
+ADwinAI8("AI8_2", ADwin, module_address=6)
 
-DDS_AS065("DDS1", parent_device=DIO32_1, connection="13", device_address="10.14.1.8", device_port=80, mock=True)
+DDS_AS065("DDS_RF", parent_device=DIO32_1, connection="28", device_address="10.11.1.213", device_port=80, trigger_duration=0.01*ms)
+
+IMAQdxCamera("MOT_Counting", parent_device=DIO32_1, connection="21", serial_number="1E1001551991", camera_attributes={'AcquisitionControl::ExposureAuto': 'Off', 'AcquisitionControl::ExposureTime': mot_counting_exposure_duration_connection_table, 'AnalogControl::GainAuto': 'Off', 'AnalogControl::Gain': 0, 'AcquisitionControl::TriggerMode': 'On', 'AcquisitionControl::TriggerActivation': 'RisingEdge', "ImageFormatControl::PixelFormat": "Mono16", "ImageFormatControl::Width": image_roi_width, "ImageFormatControl::Height":image_roi_height, "ImageFormatControl::OffsetX": image_roi_offset_x, "ImageFormatControl::OffsetY": image_roi_offset_y}, orientation="PoC6", exception_on_failed_shot=False) # Install NI package manager and then NI-Vision software
 
 # Digital Outputs
 # DigitalOut("Shutter_Cooler", parent_device=DIO32_1, connection="1")
@@ -30,7 +33,7 @@ Shutter("Shutter_2D_MOT", parent_device=DIO32_1, connection="3", delay=(0, 0), o
 # DigitalOut("Shutter_Push_Beam", parent_device=DIO32_1, connection="4")
 Shutter("Shutter_Push_Beam", parent_device=DIO32_1, connection="4", delay=(0, 0), open_state=0)
 # DigitalOut("Shutter_MOT3", parent_device=DIO32_1, connection="5")
-Shutter("Shutter_MOT3", parent_device=DIO32_1, connection="5", delay=(0, 0), open_state=1)
+Shutter("Shutter_MOT3", parent_device=DIO32_1, connection="5", delay=(0, 0), open_state=0)
 # DigitalOut("", parent_device=DIO32_1, connection="6")
 # DigitalOut("", parent_device=DIO32_1, connection="7")
 # DigitalOut("", parent_device=DIO32_1, connection="8")
@@ -50,7 +53,7 @@ Shutter("Shutter_DMD", parent_device=DIO32_1, connection="18", delay=(0, 0), ope
 Shutter("Shutter_808", parent_device=DIO32_1, connection="19", delay=(0, 0), open_state=1)
 # DigitalOut("Shutter_Tweezer", parent_device=DIO32_1, connection="20")
 Shutter("Shutter_Tweezer", parent_device=DIO32_1, connection="20", delay=(0, 0), open_state=0)
-Trigger("Trigger_Camera", parent_device=DIO32_1, connection="21")
+# Trigger("Trigger_Camera", parent_device=DIO32_1, connection="21")
 # DigitalOut("Shutter_HODT", parent_device=DIO32_1, connection="22")
 Shutter("Shutter_HODT", parent_device=DIO32_1, connection="22", delay=(0, 0), open_state=0)
 # DigitalOut("Shutter_VODT", parent_device=DIO32_1, connection="23")
@@ -61,7 +64,7 @@ Shutter("Shutter_eHODT", parent_device=DIO32_1, connection="24", delay=(0, 0), o
 Trigger("Trigger_MOT_Logging", parent_device=DIO32_1, connection="25")
 DigitalOut("Trigger_Orca_Quest", parent_device=DIO32_1, connection="26")
 DigitalOut("RF_Switch", parent_device=DIO32_1, connection="27")
-DigitalOut("RF_DDS_Trigger", parent_device=DIO32_1, connection="28")
+# DigitalOut("RF_DDS_Trigger", parent_device=DIO32_1, connection="28")
 DigitalOut("Trigger_Monitoring", parent_device=DIO32_1, connection="29")
 DigitalOut("Trigger_Tweezer_Modulation", parent_device=DIO32_1, connection="30")
 DigitalOut("Trigger_VODT_Modulation", parent_device=DIO32_1, connection="31")
@@ -119,7 +122,7 @@ ADwinAnalogOut("Coil_L1", parent_device=AO8_2, connection="2")
 ADwinAnalogOut("Coil_R2", parent_device=AO8_2, connection="3")
 ADwinAnalogOut("Mixer_HODT", parent_device=AO8_2, connection="4")
 ADwinAnalogOut("Mixer_VODT", parent_device=AO8_2, connection="5")
-ADwinAnalogOut("Mixer_Tweezer", parent_device=AO8_2, connection="6")
+ADwinAnalogOut("Mixer_Tweezer", parent_device=AO8_2, connection="6", unit_conversion_class=unitconversions.Photodiode, unit_conversion_parameters={"offset": 0.036, "slope": 0.230})
 ADwinAnalogOut("Mixer_Accordion", parent_device=AO8_2, connection="7")
 ADwinAnalogOut("AOUT_16", parent_device=AO8_2, connection="8")
 
@@ -140,8 +143,7 @@ AnalogIn("Photodiode_Shielding", parent_device=AI8_2, connection="4")
 AnalogIn("AIN_13", parent_device=AI8_2, connection="5")
 AnalogIn("Photodiode_808_Tweezer_Gain1", parent_device=AI8_2, connection="6")
 AnalogIn("Photodiode_808_Tweezer_Gain50", parent_device=AI8_2, connection="7")
-AnalogIn("AIN_16", parent_device=AI8_2, connection="8")
-
+AnalogIn("AIN_16", parent_device=AI8_2, connection="8", scale_factor=8)
 
 
 if __name__ == '__main__':
@@ -150,7 +152,7 @@ if __name__ == '__main__':
 
     start() 
 
-    t = 0 * us
+    t = 0 * ms
 
     add_time_marker(t, "Initialize Experiment")
     t = experiment.initialize(t)
@@ -158,12 +160,16 @@ if __name__ == '__main__':
     add_time_marker(t, "Start MOT Loading")
     t = experiment.mot_loading(t)
 
-    add_time_marker(t, "Start MOT Compression")
-    t = experiment.mot_compression(t)
+    if use_mot_compression:
 
-    add_time_marker(t, "Start MOT Release")
-    t = experiment.release_recapture(t)
+        add_time_marker(t, "Start MOT Compression")
+        t = experiment.mot_compression(t)
 
+    if use_hodt or use_vodt or use_tweezer:
+        add_time_marker(t, "Start MOT Release")
+        t = experiment.release_recapture(t)
+
+    t_hodt = t_vodt = t_tweezer = t
     if use_hodt or use_vodt or use_tweezer:
         add_time_marker(t, "Start ODT")
         experiment.odt_prep(t)
@@ -175,19 +181,47 @@ if __name__ == '__main__':
             t_tweezer = experiment.tweezer(t)
 
     t = max(t_hodt, t_vodt, t_tweezer)
+    
 
-    add_time_marker(t, "Spilling")
-    t = experiment.spilling(t)
+    if do_tweezer_spilling:
+        t += 100 * ms
+        add_time_marker(t, "Spilling")
+        t = experiment.spilling(t)
+    
+    #t += 100 * ms
 
 
 
     add_time_marker(t, "Start MOT Recapture")
     t = experiment.release_recapture_2(t)
 
-    add_time_marker(t, "Start MOT Image")
-    t = experiment.odt_imaging(t)
+    if take_mot_image:
+        MOT_Counting.expose(t + imag_odt_start, trigger_duration = 5*ms, name = 'MOT_Counting')
+        t += 200 * ms
+
+    if take_cmot_image:
+        add_time_marker(t, "Start MOT Image")
+        t = experiment.odt_imaging(t)
 
     add_time_marker(t, "Reset")
     t = experiment.reset(t)
+
+    if take_magnetic_field_traces:
+        LEM_Coil_R2.acquire('LEM_Coil_R2', 10*ms, t)
+        LEM_Coil_L1.acquire('LEM_Coil_L1', 10*ms, t)
+        LEM_Coil_R1_plus_L2.acquire('LEM_Coil_R1_plus_L2', 10*ms, t)
+
+    if take_photodiode_traces:
+        Photodiode_MOT2.acquire('Photodiode_MOT2', 10*ms, t)
+        Photodiode_VODT.acquire('Photodiode_VODT', 10*ms, t)
+        # Photodiode_Tweezer_Gain1.acquire('Photodiode_Tweezer_Gain1', 10*ms, t)
+        Photodiode_HODT.acquire('Photodiode_HODT', 10*ms, t)
+        Photodiode_Tweezer_Gain50.acquire('Photodiode_Tweezer_Gain50', 10*ms, t)
+        # Photodiode_MOT1_Gain1.acquire('Photodiode_MOT1_Gain1', 10*ms, t)
+        Photodiode_MOT3.acquire('Photodiode_MOT3', 10*ms, t)
+        # Photodiode_eHODT.acquire('Photodiode_eHODT', 10*ms, t)
+        # Photodiode_Shielding.acquire('Photodiode_Shielding', 10*ms, t)
+        # Photodiode_808_Tweezer_Gain1.acquire('Photodiode_808_Tweezer_Gain1', 10*ms, t)
+        # Photodiode_808_Tweezer_Gain50.acquire('Photodiode_808_Tweezer_Gain50', 10*ms, t)
 
     stop(t + 100 * us)

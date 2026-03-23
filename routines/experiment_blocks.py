@@ -1,21 +1,30 @@
 from labscript import *
 
+
+def quadratic_ramp(t_rel, duration, initial, final):
+    return final + (initial - final) * ((t_rel / duration)-1) ** 2
+
 def initialize(t):
     
-    initialize_time = 100*ms
+    initialize_time = 10*ms
     
     ####################
     # Digital Outputs
     ####################
     
     # Shutters
-    Shutter_Cooler.go_high(t)
+    Shutter_Cooler.open(t)
+    Shutter_Repump.open(t)
+    Shutter_2D_MOT.open(t)
     Shutter_Absorption.go_low(t)
     Shutter_808.go_low(t)
     Shutter_DMD.go_high(t)
     Shutter_Accordion.go_high(t)
-    Shutter_MOT3.go_low(t)
-    Shutter_Nuvu.go_high(t)
+    Shutter_MOT3.open(t)
+    Shutter_Nuvu.close(t)
+    
+    Shutter_Push_Beam.open(t)
+    Shutter_2D_MOT.open(t)
     
     # AOMs
     Switch_Imaging1_AOM.go_high(t)
@@ -69,8 +78,8 @@ def initialize(t):
     Mixer_Cooler.constant(t, 0.39)
     Mixer_808_Tweezer.constant(t, 1)
     Coil_R1_plus_L2.constant(t, 0)
-    Coil_L1.ramp(t, initialize_time, 0, imag_mot_coil1, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(t, initialize_time, 0, imag_mot_coil4, adwin_ramp_sampling_rate)
+    Coil_L1.ramp(t, initialize_time, 0, coil_load_l1_gradient, adwin_ramp_sampling_rate)
+    Coil_R2.ramp(t, initialize_time, 0, coil_load_r2_gradient, adwin_ramp_sampling_rate)
     Mixer_HODT.constant(t, hodt_power_heating)
     
     t += initialize_time
@@ -82,8 +91,9 @@ def mot_loading(t):
     VCO_Cooler.constant(t, vco_cooler)
     Mixer_Cooler.constant(t, power_cooler_load)
     Mixer_Repump.constant(t, power_repump_load)
-    Coil_L1.constant(t, imag_mot_coil1)
-    Coil_R2.constant(t, imag_mot_coil4)
+    Coil_L1.constant(t, coil_load_l1_gradient*shutoff)
+    Coil_R2.constant(t, coil_load_r2_gradient*shutoff)
+    Shutter_Push_Beam.open(t)
     
     Trigger_MOT_Logging.trigger(t+10*ms, trigger_duration)
     
@@ -106,6 +116,8 @@ def release_recapture(t):
     return t
 
 def mot_compression(t):
+    Mixer_Repump.constant(t, comp_repump_power_start)
+    Mixer_Cooler.constant(t, comp_cooler_power_start)
     VCO_Repump.ramp(t+comp_freq_start, comp_freq_duration, comp_repump_freq_start, comp_repump_freq_end, adwin_ramp_sampling_rate)
     VCO_Cooler.ramp(t+comp_freq_start, comp_freq_duration, comp_cooler_freq_start, comp_cooler_freq_end, adwin_ramp_sampling_rate)
     Mixer_Repump.ramp(t+comp_power_start, comp_power_duration, comp_repump_power_start, comp_repump_power_end, adwin_ramp_sampling_rate)
@@ -142,6 +154,7 @@ def release_recapture_2(t):
     Shutter_808.go_low(t + 7*ms)
     Shutter_HODT.go_low(t + 7*ms)
     Shutter_VODT.go_low(t + 7*ms)
+    Shutter_Tweezer.go_low(t + 7*ms)
     
     # ===================
     # Analog Events
@@ -179,6 +192,7 @@ def release_recapture_2(t):
     
     Coil_R1_plus_L2.constant(t + recapture_release_time, 0)
     
+    Coil_L1.set_PID(t + recapture_release_coil, LEM_Coil_L1, set_output=0)
     Coil_L1.ramp(t + recapture_release_coil, 0.1*ms, 0, recapture_coil1_load, adwin_ramp_sampling_rate)
     Coil_L1.ramp(t + recapture_hold + recapture_release_coil,
                  recapture_recomp_time,
@@ -186,6 +200,7 @@ def release_recapture_2(t):
                  recapture_coil1_imag,
                  adwin_ramp_sampling_rate)
     
+    Coil_R2.set_PID(t + recapture_release_coil, LEM_Coil_R2, set_output=0)
     Coil_R2.ramp(t + recapture_release_coil, 0.1*ms, 0, recapture_coil4_load, adwin_ramp_sampling_rate)
     Coil_R2.ramp(t + recapture_hold + recapture_release_coil,
                  recapture_recomp_time,
@@ -194,9 +209,10 @@ def release_recapture_2(t):
                  adwin_ramp_sampling_rate)
     
     Mixer_808_Tweezer.constant(t, 0)
-    Mixer_HODT.constant(t, 0)
-    Mixer_VODT.constant(t, 0)
-    Mixer_Tweezer.constant(t, 0)
+    Mixer_HODT.set_PID(t, None, set_output=0)
+    Mixer_VODT.set_PID(t, None, set_output=0)
+    Mixer_Tweezer.set_PID(t, None, set_output=0)
+    # Mixer_Tweezer.constant(t, 0)
     
     # Calculate end time: latest action is at (recapture_hold + recapture_release_time/coil + recapture_recomp_time)
     t += recapture_hold + max(recapture_release_time, recapture_release_coil) + recapture_recomp_time
@@ -231,7 +247,7 @@ def mot_imaging(t):
 def odt_imaging(t):
     """ODT Imaging sequence"""
     
-    Trigger_Camera.trigger(t + imag_odt_start, 5*ms)
+    MOT_Counting.expose(t + imag_odt_start, trigger_duration = 5*ms, name = 'MOT_Counting')
     
     Shutter_Cooler.go_low(t + imag_odt_shutter_cooler)
     Shutter_Repump.go_low(t + imag_odt_shutter_repump)
@@ -257,8 +273,8 @@ def odt_imaging(t):
     Coil_R2.constant(t + imag_odt_start + svodt, 0)
     
     # Deactivate Tweezer PID before setting to zero
-    Mixer_Tweezer.set_PID(t - 0.01*ms, None, set_output=0)
-    Mixer_Tweezer.constant(t, 0)
+    Mixer_Tweezer.set_PID(t, None, set_output=0)
+    # Mixer_Tweezer.constant(t, 0)
     
     # Letzte Aktion: Coil_L1/R2.constant bei t + imag_odt_start + svodt
     return t + imag_odt_start + svodt
@@ -317,14 +333,16 @@ def reset(t):
     Switch_Coil_R2.go_low(t)
     Switch_Coil_L1.go_low(t)
     Switch_Coil_R1_plus_L2.go_low(t)
+
+    DDS_RF.set_frequency(t, rf_balancing_freq, rf_balancing_power, 0)
     
-    DDS1.trigger(t, 0.01*ms)
-    DDS1.trigger(t + 1*ms, 0.01*ms)
-    DDS1.trigger(t + 2*ms, 0.01*ms)
-    DDS1.trigger(t + 3*ms, 0.01*ms)
+    #DDS_RF.trigger(t, 0.01*ms)
+    DDS_RF.trigger(t + 1*ms, 0.01*ms)
+    DDS_RF.trigger(t + 2*ms, 0.01*ms)
+    DDS_RF.trigger(t + 3*ms, 0.01*ms)
     
-    Shutter_2D_MOT.go_high(t)
-    Trigger_Camera.trigger(t, 1*ms)
+    Shutter_2D_MOT.open(t)
+    # Trigger_Camera.trigger(t, 1*ms)
     
     VCO_Repump.constant(t, vco_repump)
     VCO_Cooler.constant(t, vco_cooler)
@@ -345,6 +363,9 @@ def reset(t):
     Mixer_eHODT.set_PID(t - 0.01*ms, None, set_output=0)
     Mixer_Tweezer.set_PID(t - 0.01*ms, None, set_output=tweezer_power_heating + 5)
     Mixer_808_Tweezer.set_PID(t - 0.01*ms, None, set_output=1)
+    Coil_R1_plus_L2.set_PID(t - 0.01*ms, None, set_output=0)
+    Coil_L1.set_PID(t - 0.01*ms, None, set_output=0)
+    Coil_R2.set_PID(t - 0.01*ms, None, set_output=0)
     
     Mixer_HODT.constant(t, hodt_power_heating)
     Mixer_VODT.constant(t, vodt_power_heating)
@@ -352,54 +373,6 @@ def reset(t):
     
     # Letzte Aktion: DDS1.trigger bei t + 3.01*ms
     return t + 3.01*ms
-
-# =============================================================================
-# Block 10: Abs first imag (Block Active = FALSE)
-# =============================================================================
-def abs_first_imag(t):
-    """First absorption imaging pulse"""
-    
-    Trigger_Camera.trigger(t + imag_1_cam, 1*ms)
-    
-    Switch_Absorption_AOM.go_low(t + imag_1_switch - imag_aom_delay - imag_shutter_delay)
-    Shutter_Imaging1.go_high(t + imag_1_switch - imag_shutter_delay)
-    Shutter_Imaging2.go_high(t + imag_1_switch - imag_shutter_delay)
-    
-    Switch_Imaging1_AOM.go_high(t + imag_1_switch)
-    Switch_Imaging1_AOM.go_low(t + imag_1_switch + imag_1_sv)
-    
-    Shutter_Imaging1.go_low(t + imag_1_switch + imag_1_sv)
-    Shutter_Imaging2.go_low(t + imag_1_switch + imag_1_sv)
-    Switch_Absorption_AOM.go_high(t + imag_1_switch + imag_1_sv + imag_shutter_delay)
-    
-    # Letzte Aktion: Switch_Absorption_AOM.go_high
-    return t + imag_1_switch + imag_1_sv + imag_shutter_delay
-
-# =============================================================================
-# Block 11: Abs sec. imag (Block Active = FALSE)
-# =============================================================================
-def abs_sec_imag(t):
-    """Second absorption imaging pulse"""
-    
-    Trigger_Camera.trigger(t + imag_2_cam, 1*ms)
-    Trigger_Camera.trigger(t + imag_3_cam, 1*ms)
-    
-    Shutter_Imaging1.go_high(t + imag_2_switch - imag_shutter_delay)
-    Shutter_Imaging2.go_high(t + imag_2_switch - imag_shutter_delay)
-    Switch_Absorption_AOM.go_low(t + imag_2_switch - imag_aom_delay - imag_shutter_delay)
-    Shutter_Imaging1.go_low(t + imag_2_switch + imag_2_sv)
-    Shutter_Imaging2.go_low(t + imag_2_switch + imag_2_sv)
-    
-    Switch_Imaging1_AOM.go_high(t + imag_2_switch)
-    Switch_Imaging1_AOM.go_low(t + imag_2_switch + imag_2_sv)
-    
-    Switch_Absorption_AOM.go_high(t + imag_2_switch + imag_2_sv + imag_shutter_delay)
-    
-    Coil_L1.constant(t, 0)
-    Coil_R2.constant(t, 0)
-    
-    # Letzte Aktion: max von Kamera-Trigger und AOM
-    return t + max(imag_3_cam + 1*ms, imag_2_switch + imag_2_sv + imag_shutter_delay)
 
 # =============================================================================
 # Block 12: Flashing (Block Active = FALSE)
@@ -452,20 +425,49 @@ def flashing(t):
 def hodt(t):
     """Horizontal Optical Dipole Trap loading and evaporation"""
     
-    # Activate HODT PID
-    Mixer_HODT.set_PID(t + hodt_power_start - aom_on_delay, Photodiode_HODT, set_output=0)
-    
+    Mixer_HODT.constant(t + hodt_shutter_start - 10*ms, 0)
     Shutter_HODT.go_high(t + hodt_shutter_start)
     
-    Mixer_HODT.constant(t + hodt_power_start - aom_on_delay, 0)
-    Mixer_HODT.ramp(t + hodt_power_start, 
-                    hodt_power_ramp, 
-                    0, 
-                    hodt_power_initial, 
-                    adwin_ramp_sampling_rate)
+    # Activate HODT PID
+    Mixer_HODT.set_PID(t + hodt_power_start, Photodiode_HODT, set_output=hodt_photodiode_offset)
+    
+    
+    #Mixer_HODT.constant(t + hodt_power_start - aom_on_delay, 0)
+    # Mixer_HODT.customramp(
+    #     t + hodt_power_start,
+    #     hodt_power_ramp,
+    #     quadratic_ramp,
+    #     hodt_photodiode_offset,
+    #     hodt_power_initial,
+    #     samplerate=adwin_ramp_sampling_rate,
+    # )
+    Mixer_HODT.ramp(
+        t + hodt_power_start,
+        hodt_power_ramp,
+        hodt_photodiode_offset,
+        hodt_power_initial,
+        adwin_ramp_sampling_rate
+    )
+    
+    if use_vodt:
+        Mixer_HODT.customramp(
+            t + hodt_power_start + hodt_power_ramp + hodt_evap_plain_time,
+            hodt_evap_ramp,
+            quadratic_ramp,
+            hodt_power_initial,
+            hodt_power_evap_end,
+            samplerate=adwin_ramp_sampling_rate
+        )
+        # Mixer_HODT.ramp(t + hodt_power_start + hodt_evap_plain_time,
+        #                 hodt_evap_ramp,
+        #                 hodt_power_initial,
+        #                 hodt_power_evap_end,
+        #                 adwin_ramp_sampling_rate
+        #                 )
+        Mixer_HODT.set_PID(t + hodt_power_start + hodt_evap_plain_time + hodt_evap_ramp, None, set_output=0)
     
     # Letzte Aktion: Mixer_HODT.ramp endet bei hodt_power_start + hodt_power_ramp
-    return t + hodt_power_start + hodt_power_ramp
+    return t + hodt_power_start + hodt_power_ramp + hodt_evap_plain_time + hodt_evap_ramp
 
 # =============================================================================
 # Block 14: HODT Modulation (Block Active = FALSE)
@@ -568,11 +570,14 @@ def shielding_mod(t):
 def odt_prep(t):
     """ODT preparation - shutting off MOT beams and ramping magnetic fields"""
     
-    Shutter_Cooler.go_high(t)
-    Shutter_Repump.go_high(t + 5*ms)
+    Shutter_Cooler.close(t)
+    Shutter_Repump.close(t + 5*ms)
     
     Switch_Coil_R2.go_low(t + odt_prep_cooler_off)
     Switch_Coil_L1.go_low(t + odt_prep_cooler_off)
+
+    Coil_R2.set_PID(t + odt_prep_cooler_off, None, set_output=0)
+    Coil_L1.set_PID(t + odt_prep_cooler_off, None, set_output=0)
     
     Coil_R1_plus_L2.ramp(t + odt_prep_cooler_off, 
                          10*ms, 
@@ -580,8 +585,37 @@ def odt_prep(t):
                          odt_prep_coil23_balance * shutoff, 
                          adwin_ramp_sampling_rate, units='G')
     
+    DDS_RF.set_frequency(t + odt_prep_cooler_off, rf_balancing_freq, rf_balancing_power, 1)
+    
+    RF_Switch.go_high(t + odt_prep_cooler_off + 30*ms)
+    RF_Switch.go_low(t + odt_prep_cooler_off + odt_prep_rf_balance_duration + 30*ms)
+    
+    Coil_R1_plus_L2.ramp(t + odt_prep_cooler_off + odt_prep_rf_balance_duration + 35*ms,
+                         10*ms,
+                         odt_prep_coil23_balance * shutoff,
+                         odt_prep_coil23_lz,
+                         adwin_ramp_sampling_rate, units='G')
+    
+    #DDS_RF.set_frequency(t + odt_prep_cooler_off, rf_balancing_freq, rf_balancing_power, 1)
+    # DDS_RF.set_frequency(t + odt_prep_cooler_off + odt_prep_rf_balance_duration + 20*ms, landau_zehner_2_to_3_center_frequency, 1, 0)
+    DDS_RF.set_frequency_ramp(t + odt_prep_cooler_off + odt_prep_rf_balance_duration + 80*ms,
+                              landau_zehner_2_to_3_duration,
+                              landau_zehner_2_to_3_center_frequency - landau_zehner_2_to_3_freqeuency_detuning/2,
+                              landau_zehner_2_to_3_center_frequency + landau_zehner_2_to_3_freqeuency_detuning/2,
+                              1, True)
+    RF_Switch.go_high(t + 0.01*ms + odt_prep_cooler_off + odt_prep_rf_balance_duration + 80*ms)
+    RF_Switch.go_low(t + 0.01*ms + odt_prep_cooler_off + odt_prep_rf_balance_duration + 80*ms + landau_zehner_2_to_3_duration)
+    
+    
+    Coil_R1_plus_L2.ramp(t + odt_prep_cooler_off + 95*ms + odt_prep_rf_balance_duration + landau_zehner_2_to_3_duration,
+                         10*ms,
+                         odt_prep_coil23_lz,
+                         odt_prep_coil23_transfer,
+                         adwin_ramp_sampling_rate, units='G')
+    
     Coil_L1.constant(t + odt_prep_cooler_off, 0)
     Coil_R2.constant(t + odt_prep_cooler_off, 0)
+    
     
     Mixer_Cooler.constant(t + odt_prep_cooler_off, 0)
     Mixer_Cooler.constant(t + odt_prep_cooler_off + aom_off_delay, odt_prep_cooler_heating)
@@ -590,7 +624,7 @@ def odt_prep(t):
     Mixer_Repump.constant(t + odt_prep_repump_off + aom_off_delay, odt_prep_repump_heating)
     
     # Letzte Aktion: Coil_R1_plus_L2.ramp endet bei odt_prep_cooler_off + 10*ms
-    return t + max(odt_prep_cooler_off + 10*ms, odt_prep_repump_off + aom_off_delay)
+    return t + max(odt_prep_cooler_off + 60*ms, odt_prep_repump_off + aom_off_delay + landau_zehner_2_to_3_duration)
 
 # =============================================================================
 # Block 20: VODT (Block Active = TRUE)
@@ -598,21 +632,42 @@ def odt_prep(t):
 def vodt(t):
     """Vertical Optical Dipole Trap loading and evaporation"""
     
-    # Activate VODT PID
-    Mixer_VODT.set_PID(t + vodt_power_start - aom_on_delay, Photodiode_VODT, set_output=0)
-    
+    Mixer_VODT.constant(t + vodt_shutter_start, 0)
     Shutter_VODT.go_high(t + vodt_shutter_start)
     
-    Mixer_VODT.constant(t + vodt_power_start - aom_on_delay, 0)
+    # Activate VODT PID
+    Mixer_VODT.set_PID(t + vodt_power_start, Photodiode_VODT, set_output=vodt_photodiode_offset)
+    
+    
+    #Mixer_VODT.constant(t + vodt_power_start - aom_on_delay, 0)
     
     Mixer_VODT.ramp(t + vodt_power_start,
                     vodt_power_ramp,
-                    0,
+                    vodt_photodiode_offset,
                     vodt_power_initial,
                     adwin_ramp_sampling_rate)
     
+    if use_tweezer:
+    
+        Mixer_VODT.customramp(
+            t + vodt_power_start + vodt_evap_plain_time,
+            vodt_evap_ramp,
+            quadratic_ramp,
+            vodt_power_initial,
+            vodt_power_evap_end,
+            samplerate=adwin_ramp_sampling_rate
+        )
+        # Mixer_VODT.ramp(t + vodt_power_start + vodt_evap_plain_time,
+        #                 vodt_evap_ramp,
+        #                 vodt_power_initial,
+        #                 vodt_power_evap_end,
+        #                 adwin_ramp_sampling_rate
+        #                 )
+        
+        Mixer_VODT.set_PID(t + vodt_power_start + vodt_evap_plain_time + vodt_evap_ramp, None, set_output=0)
+    
     # Letzte Aktion: Mixer_VODT.ramp endet bei vodt_power_start + vodt_power_ramp
-    return t + vodt_power_start + vodt_power_ramp
+    return t + vodt_power_start + vodt_power_ramp + vodt_evap_plain_time + vodt_evap_ramp
 
 # =============================================================================
 # Block 21: VODT Modulation (Block Active = FALSE)
@@ -634,26 +689,35 @@ def vodt_modulation(t):
 def tweezer(t):
     """Optical tweezer loading and evaporation"""
     
-    # Activate Tweezer PID
-    Mixer_Tweezer.set_PID(t + tweezer_power_start - aom_on_delay, Photodiode_Tweezer_Gain50, set_output=0)
-    
+    Mixer_Tweezer.constant(t + tweezer_shutter_start, 0)
     Shutter_Tweezer.go_high(t + tweezer_shutter_start)
     
-    Switch_Coil_R2.go_high(t + tweezer_grad_start - 20*ms)
-    Switch_Coil_L1.go_high(t + tweezer_grad_start - 20*ms)
+    # Activate Tweezer PID
+    Mixer_Tweezer.set_PID(t + tweezer_power_start, Photodiode_Tweezer_Gain50, set_output=tweezer_photodiode_50gain_offset)
     
-    Mixer_Tweezer.constant(t + tweezer_power_start - aom_on_delay, 0)
     
-    Mixer_Tweezer.constant(t + tweezer_power_start, tweezer_power_initial)
+    # Switch_Coil_R2.go_high(t + tweezer_grad_start - 20*ms)
+    # Switch_Coil_L1.go_high(t + tweezer_grad_start - 20*ms)
     
-    Mixer_Tweezer.ramp(t + tweezer_evap_plain_time,
+    # Mixer_Tweezer.constant(t + tweezer_power_start - aom_on_delay, 0)
+    
+    Mixer_Tweezer.ramp(t + tweezer_power_start,
+                       tweezer_initial_ramp_duration,
+                       0,
+                       tweezer_power_initial,
+                       adwin_ramp_sampling_rate_high,
+                       units='mW')
+    # Mixer_Tweezer.constant(t + tweezer_power_start, tweezer_power_initial)
+    
+    Mixer_Tweezer.ramp(t + tweezer_power_start + tweezer_initial_ramp_duration + tweezer_evap_plain_time,
                        tweezer_evap_ramp,
                        tweezer_power_initial,
                        tweezer_evap_end,
-                       adwin_ramp_sampling_rate)
+                       adwin_ramp_sampling_rate_high,
+                       units='mW')
     
     # Letzte Aktion: Mixer_Tweezer evaporation ramp endet
-    return t + tweezer_evap_plain_time + tweezer_evap_ramp
+    return t + tweezer_power_start + tweezer_initial_ramp_duration + tweezer_evap_plain_time + tweezer_evap_ramp
 
 # =============================================================================
 # Block 23: Spilling (Block Active = TRUE)
@@ -661,8 +725,16 @@ def tweezer(t):
 def spilling(t):
     """First spilling sequence for atom number control"""
     
-    Switch_Coil_R2.go_high(t)
-    Switch_Coil_L1.go_high(t)
+    # Coil_L1.set_PID(t-50*ms, None, set_output=0)
+    # Coil_R2.set_PID(t-50*ms, None, set_output=0)
+    Switch_Coil_R2.go_high(t-30*ms)
+    Switch_Coil_L1.go_high(t-30*ms)
+    
+    # Coil_L1.constant(t-50*ms, 0)
+    # Coil_R2.constant(t-50*ms, 0)
+    
+    Coil_L1.set_PID(t-0*us, LEM_Coil_L1, set_output=0)
+    Coil_R2.set_PID(t-0*us, LEM_Coil_R2, set_output=0)
     
     Coil_L1.ramp(t, spill_coil_ramp, 0, spill_coil_grad, adwin_ramp_sampling_rate)
     Coil_R2.ramp(t, spill_coil_ramp, 0, spill_coil_grad, adwin_ramp_sampling_rate)
@@ -675,12 +747,12 @@ def spilling(t):
     spill_start = t + spill_coil_ramp
     Mixer_Tweezer.ramp(spill_start, spill_tweezer_ramp,
                        tweezer_evap_end, spill_tweezer_depth,
-                       adwin_ramp_sampling_rate)
+                       adwin_ramp_sampling_rate, units='mW')
     
     ramp_back_start = spill_start + spill_tweezer_ramp + spill_hold
     Mixer_Tweezer.ramp(ramp_back_start, spill_tweezer_ramp,
                        spill_tweezer_depth, tweezer_evap_end,
-                       adwin_ramp_sampling_rate)
+                       adwin_ramp_sampling_rate, units='mW')
     
     grad_off_start = ramp_back_start + spill_tweezer_ramp
     Coil_L1.ramp(grad_off_start, spill_coil_ramp, spill_coil_grad, 0, adwin_ramp_sampling_rate)
@@ -714,37 +786,6 @@ def tweezer_modulation(t):
     
     # Letzte Aktion: Mixer_Tweezer ramp back endet
     return t + tweezer_mod_power_delay + tweezer_mod_time + 10*ms
-
-# =============================================================================
-# Block 25: Spilling 2 (Block Active = FALSE)
-# =============================================================================
-def spilling_2(t):
-    """Second spilling sequence"""
-    
-    Coil_L1.ramp(t + spill2_start, spill2_coil_ramp, 0, spill2_coil_grad, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(t + spill2_start, spill2_coil_ramp, 0, spill2_coil_grad, adwin_ramp_sampling_rate)
-    
-    Coil_R1_plus_L2.ramp(t + spill2_start - 20*ms, spill2_coil_ramp,
-                         spill1_coil_field * shutoff,
-                         spill2_coil_field * shutoff,
-                         adwin_ramp_sampling_rate, units='G')
-    
-    spill_start = t + spill2_start + spill2_coil_ramp
-    Mixer_Tweezer.ramp(spill_start, spill2_tweezer_ramp,
-                       tweezer_evap_end, spill2_tweezer_depth,
-                       adwin_ramp_sampling_rate)
-    
-    ramp_back_start = spill_start + spill2_tweezer_ramp + spill2_hold
-    Mixer_Tweezer.ramp(ramp_back_start, spill2_tweezer_ramp,
-                       spill2_tweezer_depth, tweezer_evap_end,
-                       adwin_ramp_sampling_rate)
-    
-    grad_off_start = ramp_back_start + spill2_tweezer_ramp
-    Coil_L1.ramp(grad_off_start, spill2_coil_ramp, spill2_coil_grad, 0, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(grad_off_start, spill2_coil_ramp, spill2_coil_grad, 0, adwin_ramp_sampling_rate)
-    
-    # Letzte Aktion: Coil ramps enden
-    return grad_off_start + spill2_coil_ramp
 
 # =============================================================================
 # Block 26: Spilling Imbalance (Block Active = FALSE)
@@ -781,99 +822,6 @@ def spilling_imbalance(t):
     return grad_off_start + spill_imb_coil_ramp
 
 # =============================================================================
-# Block 27: Spilling 3 (Block Active = FALSE)
-# =============================================================================
-def spilling_3(t):
-    """Third spilling sequence"""
-    
-    Coil_L1.ramp(t + spill3_start, spill3_coil_ramp, 0, spill3_coil_grad, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(t + spill3_start, spill3_coil_ramp, 0, spill3_coil_grad, adwin_ramp_sampling_rate)
-    
-    Coil_R1_plus_L2.ramp(t + spill3_start - 20*ms, spill3_coil_ramp,
-                         spill2_coil_field * shutoff,
-                         spill3_coil_field * shutoff,
-                         adwin_ramp_sampling_rate, units='G')
-    
-    spill_start = t + spill3_start + spill3_coil_ramp
-    Mixer_Tweezer.ramp(spill_start, spill3_tweezer_ramp,
-                       tweezer_evap_end, spill3_tweezer_depth,
-                       adwin_ramp_sampling_rate)
-    
-    ramp_back_start = spill_start + spill3_tweezer_ramp + spill3_hold
-    Mixer_Tweezer.ramp(ramp_back_start, spill3_tweezer_ramp,
-                       spill3_tweezer_depth, tweezer_evap_end,
-                       adwin_ramp_sampling_rate)
-    
-    grad_off_start = ramp_back_start + spill3_tweezer_ramp
-    Coil_L1.ramp(grad_off_start, spill3_coil_ramp, spill3_coil_grad, 0, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(grad_off_start, spill3_coil_ramp, spill3_coil_grad, 0, adwin_ramp_sampling_rate)
-    
-    # Letzte Aktion: Coil ramps enden
-    return grad_off_start + spill3_coil_ramp
-
-# =============================================================================
-# Block 28: Spilling 4 (Block Active = FALSE)
-# =============================================================================
-def spilling_4(t):
-    """Fourth spilling sequence"""
-    
-    Coil_L1.ramp(t + spill4_start, spill4_coil_ramp, 0, spill4_coil_grad, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(t + spill4_start, spill4_coil_ramp, 0, spill4_coil_grad, adwin_ramp_sampling_rate)
-    
-    Coil_R1_plus_L2.ramp(t + spill4_start - 20*ms, spill4_coil_ramp,
-                         spill3_coil_field * shutoff,
-                         spill4_coil_field * shutoff,
-                         adwin_ramp_sampling_rate, units='G')
-    
-    spill_start = t + spill4_start + spill4_coil_ramp
-    Mixer_Tweezer.ramp(spill_start, spill4_tweezer_ramp,
-                       tweezer_evap_end, spill4_tweezer_depth,
-                       adwin_ramp_sampling_rate)
-    
-    ramp_back_start = spill_start + spill4_tweezer_ramp + spill4_hold
-    Mixer_Tweezer.ramp(ramp_back_start, spill4_tweezer_ramp,
-                       spill4_tweezer_depth, tweezer_evap_end,
-                       adwin_ramp_sampling_rate)
-    
-    grad_off_start = ramp_back_start + spill4_tweezer_ramp
-    Coil_L1.ramp(grad_off_start, spill4_coil_ramp, spill4_coil_grad, 0, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(grad_off_start, spill4_coil_ramp, spill4_coil_grad, 0, adwin_ramp_sampling_rate)
-    
-    # Letzte Aktion: Coil ramps enden
-    return grad_off_start + spill4_coil_ramp
-
-# =============================================================================
-# Block 29: Spilling 5 (Block Active = FALSE)
-# =============================================================================
-def spilling_5(t):
-    """Fifth spilling sequence"""
-    
-    Coil_L1.ramp(t + spill5_start, spill5_coil_ramp, 0, spill5_coil_grad, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(t + spill5_start, spill5_coil_ramp, 0, spill5_coil_grad, adwin_ramp_sampling_rate)
-    
-    Coil_R1_plus_L2.ramp(t + spill5_start - 20*ms, spill5_coil_ramp,
-                         spill4_coil_field * shutoff,
-                         spill5_coil_field * shutoff,
-                         adwin_ramp_sampling_rate, units='G')
-    
-    spill_start = t + spill5_start + spill5_coil_ramp
-    Mixer_Tweezer.ramp(spill_start, spill5_tweezer_ramp,
-                       tweezer_evap_end, spill5_tweezer_depth,
-                       adwin_ramp_sampling_rate)
-    
-    ramp_back_start = spill_start + spill5_tweezer_ramp + spill5_hold
-    Mixer_Tweezer.ramp(ramp_back_start, spill5_tweezer_ramp,
-                       spill5_tweezer_depth, tweezer_evap_end,
-                       adwin_ramp_sampling_rate)
-    
-    grad_off_start = ramp_back_start + spill5_tweezer_ramp
-    Coil_L1.ramp(grad_off_start, spill5_coil_ramp, spill5_coil_grad, 0, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(grad_off_start, spill5_coil_ramp, spill5_coil_grad, 0, adwin_ramp_sampling_rate)
-    
-    # Letzte Aktion: Coil ramps enden
-    return grad_off_start + spill5_coil_ramp
-
-# =============================================================================
 # Block 30: 808 Tweezer (Block Active = FALSE)
 # =============================================================================
 def tweezer_808(t):
@@ -900,7 +848,7 @@ def tweezer_808(t):
 # =============================================================================
 # Block 31: 808 Spilling 1 (Block Active = FALSE)
 # =============================================================================
-def spilling_808_1(t):
+def spilling_808(t):
     """808nm Tweezer first spilling sequence"""
     
     Switch_Coil_R2.go_high(t + spill808_1_start - 20*ms)
@@ -942,35 +890,6 @@ def modulation_808(t):
     
     # Letzte Aktion: DOUT_Channel29 trigger
     return t + tw808_mod_start + 0.02*ms
-
-# =============================================================================
-# Block 33: 808 Spilling 2 (Block Active = FALSE)
-# =============================================================================
-def spilling_808_2(t):
-    """808nm Tweezer second spilling sequence"""
-    
-    Coil_L1.ramp(t + spill808_2_start, spill808_2_coil_ramp, 0, spill808_2_coil_grad, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(t + spill808_2_start, spill808_2_coil_ramp, 0, spill808_2_coil_grad, adwin_ramp_sampling_rate)
-    
-    Coil_R1_plus_L2.ramp(t + spill808_2_start - 20*ms, spill808_2_coil_ramp,
-                         spill808_1_coil_field * shutoff,
-                         spill808_2_coil_field * shutoff,
-                         adwin_ramp_sampling_rate, units='G')
-    
-    spill_start = t + spill808_2_start + spill808_2_coil_ramp
-    Mixer_808_Tweezer.ramp(spill_start, spill808_2_tweezer_ramp,
-                           tw808_evap_end, spill808_2_tweezer_depth, adwin_ramp_sampling_rate)
-    
-    ramp_back_start = spill_start + spill808_2_tweezer_ramp + spill808_2_hold
-    Mixer_808_Tweezer.ramp(ramp_back_start, spill808_2_tweezer_ramp,
-                           spill808_2_tweezer_depth, tw808_evap_end, adwin_ramp_sampling_rate)
-    
-    grad_off_start = ramp_back_start + spill808_2_tweezer_ramp
-    Coil_L1.ramp(grad_off_start, spill808_2_coil_ramp, spill808_2_coil_grad, 0, adwin_ramp_sampling_rate)
-    Coil_R2.ramp(grad_off_start, spill808_2_coil_ramp, spill808_2_coil_grad, 0, adwin_ramp_sampling_rate)
-    
-    # Letzte Aktion: Coil ramps enden
-    return grad_off_start + spill808_2_coil_ramp
 
 # =============================================================================
 # Block 34: Tunnelling (Block Active = FALSE)
